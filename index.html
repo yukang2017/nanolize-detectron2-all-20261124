@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>detectron2 全功能运行记录</title>
+<meta name="description" content="用 nanolize 最新的 main 对 detectron2 做一次全功能、无人值守、成对并行的改写：设置、时间线、测试设计、结果、花费，以及遇到的问题。">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column. Verdict and four figures first, then the table of all items, then the fix plan in five packages (one block per defect: seen, checked, change, test), then what is no bug, the order of work, limits and the probe log. */
+:root {
+  --bg: #f4f6f9; --card: #fcfcfb; --ink: #14171c; --ink-2: #474e5c; --ink-3: #6b7281;
+  --line: #dde1e8; --accent: #2a78d6; --accent-soft: #dfeafa;
+  --good-ink: #0b6b0b; --warn-ink: #7a5200; --crit-ink: #a52727;
+  --good-bg: #e4f5e4; --warn-bg: #fdf1d3; --crit-bg: #fbe3e3;
+  --font-body: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-head: "Space Grotesk", Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111315; --card: #1a1a19; --ink: #eceef1; --ink-2: #c0c5ce; --ink-3: #959cab;
+    --line: #2f333a; --accent: #5a9cec; --accent-soft: #162c47;
+    --good-ink: #7fd67f; --warn-ink: #f3c458; --crit-ink: #f08d8d;
+    --good-bg: #12301a; --warn-bg: #3a2d0c; --crit-bg: #3b1a1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111315; --card: #1a1a19; --ink: #eceef1; --ink-2: #c0c5ce; --ink-3: #959cab;
+  --line: #2f333a; --accent: #5a9cec; --accent-soft: #162c47;
+  --good-ink: #7fd67f; --warn-ink: #f3c458; --crit-ink: #f08d8d;
+  --good-bg: #12301a; --warn-bg: #3a2d0c; --crit-bg: #3b1a1a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.page { max-width: 1000px; margin: 0 auto; padding-block: 36px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 44px; }
+header { display: flex; flex-direction: column; gap: 12px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; color: var(--ink-3); }
+h1 { font-family: var(--font-head); font-weight: 600; font-size: clamp(25px, 4.2vw, 36px); line-height: 1.28; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--font-head); font-weight: 600; font-size: 22px; line-height: 1.3; margin: 0; text-wrap: balance; }
+h3 { font-size: 16px; font-weight: 600; margin: 0; line-height: 1.45; }
+p { margin: 0; max-width: 72ch; }
+a { color: var(--accent); }
+.lede { font-size: 16.5px; color: var(--ink-2); max-width: 72ch; }
+code, .mono { font-family: var(--font-mono); font-size: .86em; }
+code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+section { display: flex; flex-direction: column; gap: 16px; min-width: 0; scroll-margin-top: 16px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--ink-2); }
+.meta b { font-weight: 500; color: var(--ink-3); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 12px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi .label { font-size: 12.5px; color: var(--ink-3); }
+.kpi .value { font-family: var(--font-head); font-weight: 600; font-size: 30px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.kpi .value small { font-size: 15px; font-weight: 500; color: var(--ink-2); }
+.kpi .note { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.good { background: var(--good-bg); color: var(--good-ink); }
+.pill.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.pill.crit { background: var(--crit-bg); color: var(--crit-ink); }
+.pill i { font-style: normal; font-weight: 700; }
+.tag { display: inline-block; font-size: 12px; color: var(--ink-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; white-space: nowrap; line-height: 1.6; }
+
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 14px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 500; color: var(--ink-3); font-size: 12.5px; white-space: nowrap; vertical-align: bottom; }
+tr:last-child td { border-bottom: 0; }
+td.id { font-family: var(--font-head); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+td.id a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+td small { color: var(--ink-3); font-size: 12px; display: block; margin-top: 3px; line-height: 1.5; }
+td.nowrap { white-space: nowrap; }
+table.all td:nth-child(2) { min-width: 130px; }
+table.all td:nth-child(3) { min-width: 300px; }
+table.all td:nth-child(4) { min-width: 150px; }
+table.probes td:nth-child(3) { min-width: 260px; }
+table.probes td:nth-child(4) { min-width: 300px; }
+table.order td:nth-child(2) { min-width: 300px; }
+
+ul.plain { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 8px; max-width: 76ch; }
+ol.plain { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 8px; max-width: 76ch; }
+
+.pkg { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: 16px; }
+.pkg > p { color: var(--ink-2); }
+.item { display: grid; grid-template-columns: 3.2em 1fr; gap: 4px 14px; padding: 22px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 16px; }
+.item:first-child { padding-top: 2px; } .item:last-child { border-bottom: 0; padding-bottom: 2px; }
+.item .n { font-family: var(--font-head); font-weight: 600; font-size: 22px; line-height: 1.25; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.item .body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.item .head { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.item .src { font-size: 12.5px; color: var(--ink-3); }
+.item dl { margin: 0; display: grid; grid-template-columns: 7.2em 1fr; gap: 10px 12px; font-size: 14px; }
+.item dt { color: var(--ink-3); font-size: 13px; padding-top: 1px; }
+.item dd { margin: 0; max-width: 74ch; min-width: 0; }
+.item dd > ul, .item dd > ol, .item dd > pre { margin-top: 8px; }
+.item dd > ul:first-child, .item dd > ol:first-child { margin-top: 0; }
+.item dd > pre + * { margin-top: 8px; }
+.item dd p { margin-top: 8px; }
+@media (max-width: 560px) { .item { grid-template-columns: 1fr; } .item dl { grid-template-columns: 1fr; gap: 2px 0; } .item dt { margin-top: 8px; } }
+
+pre { margin: 0; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; background: var(--accent-soft); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+footer { font-size: 12.5px; color: var(--ink-3); border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+footer p { max-width: 86ch; }
+/* additions for this page */
+table td.nowrap, table th.nowrap { white-space: nowrap; }
+@media (max-width: 720px) {
+  .scroll table:has(th:nth-child(3)) { min-width: 640px; }
+  .scroll table:has(th:nth-child(5)) { min-width: 900px; }
+}
+.panel > h3 { font-size: 17px; }
+.note { font-size: 13px; color: var(--ink-3); max-width: 80ch; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 18px; }
+pre, code { font-variant-ligatures: none; }
+td:first-child { min-width: 3em; }
+#setup td:first-child { min-width: 7em; }
+#design td:first-child { min-width: 9em; }
+#design td:nth-child(4) { min-width: 18em; }
+#pr61 td:nth-child(2), #pr61 td:nth-child(3) { min-width: 17em; }
+figure { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+figure img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #f6f5f1; display: block; }
+figcaption { font-size: 13px; color: var(--ink-2); max-width: 80ch; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+#timeline td:first-child { min-width: 9em; }
+#timeline td:nth-child(4) { min-width: 20em; }
+#result td:first-child { min-width: 7.5em; }
+#result td:nth-child(5) { min-width: 16em; }
+#pair td:nth-child(2) { min-width: 3em; }
+#issues td:nth-child(2), #issues td:nth-child(3) { min-width: 17em; }
+#record td:nth-child(2) { min-width: 20em; }
+.item .head h3 { font-size: 16.5px; }
+.pkg > h3 { font-size: 18px; font-family: var(--font-head); margin-top: 6px; }
+@media (max-width: 720px) {
+  #timeline .scroll table, #result .scroll table, #pair .scroll table, #issues .scroll table, #record .scroll table { min-width: 760px; }
+  #result .two .scroll table { min-width: 0; }
+}
+/* the time line: two lanes on one axis */
+:root { --c-host: #9aa3b2; --c-freeze: #2a78d6; --c-wait: #c9d3e2; --c-write: #1f9d8f; --c-ws: #e0a22a; --c-compare: #7b61c9; --c-repair: #d2593f; --c-deliver: #3d8b3d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --c-host: #6f7786; --c-freeze: #5a9cec; --c-wait: #3a4250; --c-write: #3fbfae; --c-ws: #e8b548; --c-compare: #9f8ae6; --c-repair: #ea7b63; --c-deliver: #6fc26f; } }
+:root[data-theme="dark"] { --c-host: #6f7786; --c-freeze: #5a9cec; --c-wait: #3a4250; --c-write: #3fbfae; --c-ws: #e8b548; --c-compare: #9f8ae6; --c-repair: #ea7b63; --c-deliver: #6fc26f; }
+.lanes { display: flex; flex-direction: column; gap: 8px; }
+.lane { display: grid; grid-template-columns: 4.6em 1fr; gap: 10px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.bar { display: flex; height: 28px; border-radius: 6px; overflow: hidden; background: transparent; }
+.bar span { display: block; height: 100%; box-shadow: inset -1px 0 0 var(--card); }
+.axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; }
+.c-host { background: var(--c-host); } .c-freeze { background: var(--c-freeze); } .c-wait { background: var(--c-wait); }
+.c-write { background: var(--c-write); } .c-ws { background: var(--c-ws); } .c-compare { background: var(--c-compare); }
+.c-repair { background: var(--c-repair); } .c-deliver { background: var(--c-deliver); } .c-none { background: transparent; box-shadow: none !important; }
+
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="eyebrow">nanolize · 运行记录 · detectron2 全功能 · main @ 074f9946 · 2026-11-24</div>
+  <h1>detectron2 全功能运行：带缺口交付，268 条检查全部通过，体积是原版的 63.7%</h1>
+  <p class="lede">用刚更新到 main 最新提交的 nanolize 插件，在 detectron2 上做了一次全功能、无人值守、成对并行的运行。这一页记录结果：交付了什么，时间和钱花在哪里，测试设计给出了什么，修了几轮，以及这次运行暴露出的 nanolize 自己的问题。</p>
+  <div class="meta">
+    <span><b>结果</b> 带缺口交付（<code>completed_with_gaps</code>）；最后一次完整比较 268 / 268 通过</span>
+    <span><b>缺口</b> 没有配置安装检查；7 个原版测试函数没能验证</span>
+    <span><b>用时</b> 从提交到交付 6 小时 57 分；加上第 01 阶段共 7 小时 37 分</span>
+    <span><b>花费</b> 575 美元：主作业 308，草稿作业 240，主持会话 27</span>
+  </div>
+</header>
+
+<section>
+  <div class="kpis">
+    <div class="kpi"><div class="label">行为检查</div><div class="value">268 <small>/ 268 通过</small></div>
+      <div class="note">65 条来自原版测试，203 条是这次设计出来的。见<a href="#result">结果</a></div></div>
+    <div class="kpi"><div class="label">交付体积</div><div class="value">63.7% <small>的原版</small></div>
+      <div class="note">379,914 / 596,313 token；48,695 / 71,975 行。50% 的建议目标没有达到，没有做缩小体积的优化轮</div></div>
+    <div class="kpi"><div class="label">第一版</div><div class="value">4 小时 46 分</div>
+      <div class="note">16 个作者会话分五层并行写，238 美元。第一次比较 141 条检查没过。见<a href="#pair">成对和并行</a></div></div>
+    <div class="kpi"><div class="label">修复</div><div class="value">3 <small>轮</small></div>
+      <div class="note">没过的检查 141 → 5 → 1 → 0；4 个作者会话共 27 美元，用了 1 小时 42 分</div></div>
+    <div class="kpi"><div class="label">测试设计</div><div class="value">203 <small>个文件</small></div>
+      <div class="note">149 个测试、54 个场景文件；评审否决 7 次；之后没有叶子缺有效测试。273 美元。见<a href="#design">测试设计</a></div></div>
+    <div class="kpi"><div class="label">nanolize 的问题</div><div class="value">2 <small>个要改代码</small></div>
+      <div class="note">比较记录过大让运行页读不了作业；建工作区时重复编译。另有 6 处 skill 说明不清。见<a href="#issues">问题</a></div></div>
+  </div>
+</section>
+
+<section id="summary">
+  <h2>要点</h2>
+  <ul class="plain">
+    <li><b>跑完了，交付的版本通过了全部 268 条检查。</b>状态是“带缺口交付”，两个缺口都不是失败：一是这次没有配置安装检查，所以没有“能在新环境里装起来”的证据；二是原版测试里有 7 个测试函数在这个环境里没能验证。nanolize 因此不声称“功能完全保留”。</li>
+    <li><b>体积降到原版的 63.7%，没到 50% 的建议目标。</b>这个目标只是建议值；检查全部通过之后作业直接交付，没有再安排缩小体积的优化轮。</li>
+    <li><b>时间主要花在三段上。</b>冻结 2 小时 44 分（其中设计测试 1 小时 34 分，两次基线共 1 小时 5 分）；主作业等第一版 2 小时 1 分；三轮修复 1 小时 42 分。见<a href="#timeline">时间线</a>。</li>
+    <li><b>钱主要花在两处。</b>测试设计 273 美元（47%），第一版 240 美元（42%）；三轮修复加控制器只有 35 美元。</li>
+    <li><b>第一版没过的 141 条里，大部分是同一个原因。</b>16 个作者各写各的范围，按规则不碰共用的包文件，于是好几个包的 <code>__init__.py</code> 没有导出该导出的名字，检查一导入就失败。第一轮修复由一个作者通读全部代码补齐，失败降到 5 条。</li>
+    <li><b>没有遇到 PR #61 要解决的问题。</b>主作业的两次基线都可用；草稿作业报了“基线不可用”，但原因是它本来就不设计测试，不是清单写错。见<a href="#pr61">单独的一节</a>。</li>
+    <li><b>暴露出两个需要改 nanolize 代码的问题。</b>一是全功能运行的比较记录超过了 32 MiB 的读取上限，运行页和状态工具因此读不了这个作业，轨迹记录也缺了两次比较和功能图；二是每建一个并行工作区要 6 分多钟，原因是同一份内容被重复编译四遍，这次一共花掉约 1 小时 48 分。都不影响结果的对错。见<a href="#issues">问题</a>。</li>
+    <li><b>交付的代码有两点要知道。</b>参与比较的函数行里有 62% 和原版相同，高于报告里标记的 40%；另外有 1 个和内部结构绑定的原版测试在原版上通过、在交付的代码上不通过（检查点功能）。这两项都只是度量，不是验收条件。</li>
+  </ul>
+</section>
+
+
+<section id="setup">
+  <h2>设置</h2>
+  <p>这次运行用的是这台机器上刚更新过的插件，也就是 main 的最新提交。除了你给的五项设置，其余都取默认值。</p>
+
+  <div class="panel scroll"><table>
+    <tbody>
+      <tr><td class="nowrap"><b>nanolize</b></td><td>main @ <code>074f9946</code>（PR #60 合入之后），运行时 0.8.0，49 个工具。用的是给这个账号安装的插件，不是临时目录里的副本</td></tr>
+      <tr><td class="nowrap"><b>命令</b></td><td><code>$nanolize detectron2 agent=claude model=claude-fable-5-2 effort=high unattended=on parallel=on pair=on scope=all</code>，另加调度器的三项设置。没有 <code>--cn</code>，没有开性能验收，因为你没有提</td></tr>
+      <tr><td class="nowrap"><b>项目</b></td><td>detectron2 @ <code>247691a</code>，全新克隆。450 个源文件、71,975 行、81 个测试文件；按 nanolize 的算法是 596,313 token（源码 584,429，配置 11,884）</td></tr>
+      <tr><td class="nowrap"><b>主持会话</b></td><td>一个全新的 Claude Code 会话（claude-fable-5-2，effort high），在计算节点上的批处理作业里无人值守地从头跑到尾，32 核、96 GB</td></tr>
+      <tr><td class="nowrap"><b>检查在哪跑</b></td><td>经调度器在计算节点上执行，最多 8 条同时</td></tr>
+      <tr><td class="nowrap"><b>测试环境</b></td><td>现成的环境（Python 3.11，torch 2.5.1），没有重新搭。两个准备步骤：复制一份编好的 <code>_C</code> 扩展；建模型库的配置链接</td></tr>
+      <tr><td class="nowrap"><b>安装检查</b></td><td>没有给。在全新环境里编 C++ 扩展要一次编译和几个 GB 的下载，这次没有做，所以交付会把“没有安装证据”记成一个缺口</td></tr>
+      <tr><td class="nowrap"><b>作业的默认设置</b></td><td>体积目标是原版的 50%（只是建议值，不强制）；开测试设计，每个测试在原版上重复 3 次并做敲除验证；并行时最多 4 个作者同时写；作业时限 48 小时</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="panel">
+    <h3>第 01 阶段给出的范围</h3>
+    <ul class="plain">
+      <li><b>91 个能力</b>，其中 80 个叶子；71 个对外、20 个内部。<code>scope=all</code>，全部选中，没有退役的功能。</li>
+      <li><b>65 条检查</b>：52 条沿用原版测试，另外 13 个测试文件（44 个测试）是从“只有一部分能在这里跑”的原版测试里恢复出来、由主持会话直接提交到项目里的。65 条在原版上、在检查的沙箱里全部通过。</li>
+      <li><b>没法当判据的原版测试</b>：缺数据集文件的、要联网下载权重的、依赖没装的可选包（onnx、caffe2、mmdet、av）的、依赖只在 GPU 上编的扩展的。这些都没有为了让它们通过而改任何东西。</li>
+      <li><b>31 个叶子没有任何能在这里通过的原版检查</b>，它们的测试留给冻结阶段去设计；另有 37 个原版测试要迁移成能留下来的形式。</li>
+      <li><b>原样带过去的文件 224 个</b>：C++/CUDA 源码、构建和开发脚本、YAML 配置、LVIS 的类别表。</li>
+    </ul>
+  </div>
+</section>
+
+
+<section id="timeline">
+  <h2>时间线</h2>
+  <p>时间都是 UTC。主持会话 11:50 启动，12:28 提交；主作业 19:25 交付。两条横条用的是同一根时间轴：上面是主作业，下面是和它同时进行的草稿作业。</p>
+
+  <div class="panel">
+    <div class="lanes">
+      <div class="lane"><div class="who">主作业</div>
+        <div class="bar" role="img" aria-label="主作业各阶段占用的时间">
+          <span class="c-host" style="width:8.4%" title="第 01、02 阶段：38 分"></span>
+          <span class="c-freeze" style="width:36.0%" title="冻结：2 小时 44 分"></span>
+          <span class="c-wait" style="width:26.6%" title="等第一版：2 小时 1 分"></span>
+          <span class="c-compare" style="width:5.2%" title="导入和第一次比较：24 分"></span>
+          <span class="c-repair" style="width:12.7%" title="修复第 1 轮：58 分"></span>
+          <span class="c-ws" style="width:2.9%" title="修复第 2 轮里建工作区：13 分"></span>
+          <span class="c-repair" style="width:3.0%" title="修复第 2 轮的其余部分：14 分"></span>
+          <span class="c-repair" style="width:3.6%" title="修复第 3 轮：16 分"></span>
+          <span class="c-deliver" style="width:1.6%" title="交付和收尾：7 分"></span>
+        </div></div>
+      <div class="lane"><div class="who">草稿作业</div>
+        <div class="bar" role="img" aria-label="草稿作业各层占用的时间">
+          <span class="c-none" style="width:8.4%"></span>
+          <span class="c-freeze" style="width:2.7%" title="冻结和规划：12 分"></span>
+          <span class="c-write" style="width:6.8%" title="第 1 层：31 分"></span>
+          <span class="c-ws" style="width:5.5%" title="第 2 层建工作区：25 分"></span>
+          <span class="c-write" style="width:6.9%" title="第 2 层写代码和合并：31 分"></span>
+          <span class="c-ws" style="width:5.6%" title="第 3 层建工作区：25 分"></span>
+          <span class="c-write" style="width:10.4%" title="第 3 层写代码和合并：47 分"></span>
+          <span class="c-ws" style="width:5.6%" title="第 4 层建工作区：26 分"></span>
+          <span class="c-write" style="width:8.9%" title="第 4 层写代码和合并：41 分"></span>
+          <span class="c-ws" style="width:4.2%" title="第 5 层建工作区：19 分"></span>
+          <span class="c-write" style="width:6.1%" title="第 5 层写代码和合并：28 分"></span>
+          <span class="c-none" style="width:28.9%"></span>
+        </div></div>
+      <div class="lane"><div class="who"></div>
+        <div class="axis"><span>11:50</span><span>13:45</span><span>15:40</span><span>17:35</span><span>19:27</span></div></div>
+    </div>
+    <div class="legend">
+      <span><i class="c-host"></i>第 01、02 阶段</span>
+      <span><i class="c-freeze"></i>冻结</span>
+      <span><i class="c-wait"></i>等第一版</span>
+      <span><i class="c-write"></i>写第一版</span>
+      <span><i class="c-ws"></i>建并行工作区</span>
+      <span><i class="c-compare"></i>导入和第一次比较</span>
+      <span><i class="c-repair"></i>修复</span>
+      <span><i class="c-deliver"></i>交付</span>
+    </div>
+  </div>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>阶段</th><th class="nowrap">起止</th><th class="num">用时</th><th>做了什么</th></tr></thead>
+    <tbody>
+      <tr><td class="nowrap"><b>第 01、02 阶段</b><small>主持会话</small></td><td class="nowrap">11:50 – 12:28</td><td class="num">38 分</td><td>读项目、画功能图、试跑原版测试、写清单、选中全部功能并提交。114 轮对话，19 美元</td></tr>
+      <tr><td class="nowrap"><b>冻结</b><small>主作业</small></td><td class="nowrap">12:28 – 15:12</td><td class="num">2 小时 44 分</td><td>第一次基线 18.6 分，测试设计 93.5 分，第二次基线 46.8 分，封存约定 4.1 分。见<a href="#design">基线和测试设计</a></td></tr>
+      <tr><td class="nowrap"><b>写第一版</b><small>草稿作业，和冻结同时</small></td><td class="nowrap">12:28 – 17:14</td><td class="num">4 小时 46 分</td><td>自己的基线和封存 9 分，然后分五层写：第 1 层 1 个作者，后四层各 3 到 4 个作者并行。见<a href="#pair">成对和并行</a></td></tr>
+      <tr><td class="nowrap"><b>等第一版</b><small>主作业</small></td><td class="nowrap">15:12 – 17:14</td><td class="num">2 小时 1 分</td><td>主作业封存完之后没有别的事可做，等草稿作业写完</td></tr>
+      <tr><td class="nowrap"><b>导入和第一次比较</b></td><td class="nowrap">17:14 – 17:38</td><td class="num">24 分</td><td>把草稿作业的 359 个文件作为候选版本 1 导入；完整比较 22.5 分，<b>141 / 268 条没过</b></td></tr>
+      <tr><td class="nowrap"><b>修复第 1 轮</b></td><td class="nowrap">17:38 – 18:36</td><td class="num">58 分</td><td>控制器 2 分（第一份答复被拒，重答一次）；一个作者通读全部代码修了 46.8 分；完整比较 7.6 分，<b>剩 5 条</b></td></tr>
+      <tr><td class="nowrap"><b>修复第 2 轮</b></td><td class="nowrap">18:36 – 19:03</td><td class="num">27 分</td><td>两个作者并行各修一块，各 7 到 8 分；在这之前建两个工作区用了 13 分；只跑相关的 5 条检查 3.4 分，<b>剩 1 条</b></td></tr>
+      <tr><td class="nowrap"><b>修复第 3 轮</b></td><td class="nowrap">19:03 – 19:19</td><td class="num">16 分</td><td>一个作者修了 4.7 分；先跑相关的 5 条（2.7 分，全过），再做完整比较（6.5 分），<b>268 条全部通过</b></td></tr>
+      <tr><td class="nowrap"><b>交付</b></td><td class="nowrap">19:19 – 19:25</td><td class="num">5 分</td><td>选定候选版本 6，生成报告和验证包，把转换时离开验收的原版测试在交付的代码上回放一遍</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">做个参照：之前只选核心功能的那次 detectron2 运行，从提交到交付是 1 小时 47 分，第一版一次通过。全功能多出来的时间主要是给外围功能设计测试，以及写和修更多的代码。</p>
+</section>
+
+
+<section id="design">
+  <h2>基线和测试设计</h2>
+  <p>全功能运行和只选核心功能的运行，最大的差别在这一段：很多外围功能在这个环境里没有能用的原版测试，要先给它们设计测试，作者才能开始写。这一段用了 2 小时 44 分，花了 273 美元，都发生在第一个候选版本出现之前。</p>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>步骤</th><th class="num">用时</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td class="nowrap"><b>第一次基线捕获</b></td><td class="num nowrap">18.6 分钟</td><td>65 条检查在原版上全部通过，基线可用。敲除验证之后，41 个叶子没有“有效的测试”（把这个叶子的代码拿掉，没有哪条检查会因此失败）</td></tr>
+      <tr><td class="nowrap"><b>测试设计</b></td><td class="num nowrap">93.5 分钟</td><td>给 47 个叶子设计或迁移测试：53 个设计会话分三轮（47、1、5 个），27 个评审会话。结果见下表</td></tr>
+      <tr><td class="nowrap"><b>第二次基线捕获</b></td><td class="num nowrap">46.8 分钟</td><td>加上设计出的 203 个文件后共 268 条检查，在原版上全部通过；<b>没有叶子还缺有效测试</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>测试设计的结果</th><th class="num">接受</th><th class="num">拒绝</th><th>拒绝的原因</th></tr></thead>
+    <tbody>
+      <tr><td><b>设计的测试</b><small>46 个叶子</small></td><td class="num">149</td><td class="num">15</td><td>7 个测的是对外约定之外的东西；<b>6 个被评审否决</b>；2 个在原版上不通过</td></tr>
+      <tr><td><b>场景文件</b><small>41 个叶子，共 1,377 个用例；原版在每个用例上的表现就是候选版本必须有的表现</small></td><td class="num">54</td><td class="num">3</td><td>1 个在对外约定之外；<b>1 个被评审否决</b>；1 个只在“连导入都失败”时才会被敲除发现</td></tr>
+      <tr><td><b>要迁移的原版测试</b><small>10 个叶子，37 个</small></td><td class="num">30</td><td class="num"></td><td>7 个没能验证：在设计者运行的地方查不了，或者断言的是文档字符串</td></tr>
+    </tbody>
+  </table></div>
+
+  <ul class="plain">
+    <li><b>评审的否决一共 7 次</b>（6 个测试、1 个场景文件），分布在 5 个叶子上。</li>
+    <li><b>有 1 个叶子（项目加载器）没有被接受的测试</b>：它的 2 个提案都在对外约定之外。它靠场景文件得到了有效的检查。</li>
+    <li><b>被拒绝的文件里有 10 个没有再交还给设计者</b>，它们原本要查的 152 个测试和场景函数现在没有东西在查。作业的事件里写明了这一点。</li>
+    <li><b>有 10 条原版检查（第二次是 11 条）不参与敲除验证</b>：它们要从模型库里读配置，而那个链接是准备步骤在工作树里建的，“干净导出”里没有。它们仍然是每个候选版本的验收条件，只是不能证明哪个叶子被测到了，这是 41 个叶子要设计测试的原因之一。</li>
+  </ul>
+</section>
+
+
+<section id="result">
+  <h2>结果</h2>
+  <p>主作业在提交后 6 小时 57 分以“带缺口交付”结束。交付的是候选版本 6，放在仓库里的一个结果分支上，没有推送也没有合并。</p>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>比较</th><th>范围</th><th class="num">用时</th><th class="num">没过</th><th>没过的在哪</th></tr></thead>
+    <tbody>
+      <tr><td class="nowrap"><b>候选版本 1</b><small>导入的第一版</small></td><td class="nowrap">完整，268 条</td><td class="num">22.5 分</td><td class="num"><b>141</b></td><td>分布在几十个功能上。约 125 条是同一种错：检查还没开始跑，导入就失败了</td></tr>
+      <tr><td class="nowrap"><b>候选版本 2</b><small>第 1 轮修复之后</small></td><td class="nowrap">完整，268 条</td><td class="num">7.6 分</td><td class="num"><b>5</b></td><td>三个数据集功能（cityscapes、coco、lvis）和两组项目配置（MViTv2、ViTDet）</td></tr>
+      <tr><td class="nowrap"><b>候选版本 5</b><small>第 2 轮修复之后</small></td><td class="nowrap">只跑相关的 5 条</td><td class="num">3.4 分</td><td class="num"><b>1</b></td><td>ViTDet 的配置</td></tr>
+      <tr><td class="nowrap"><b>候选版本 6</b><small>第 3 轮修复之后</small></td><td class="nowrap">先跑相关的 5 条，再完整 268 条</td><td class="num">2.7 分 + 6.5 分</td><td class="num"><b>0</b></td><td>全部通过，随后选定并交付</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">候选版本 3、4 是第 2 轮里两个并行作者各自的结果，合并成候选版本 5，没有单独比较。</p>
+
+  <div class="two">
+    <div class="panel">
+      <h3>体积</h3>
+      <div class="scroll"><table>
+        <thead><tr><th></th><th class="num">原版</th><th class="num">交付</th><th class="num">比例</th></tr></thead>
+        <tbody>
+          <tr><td>token<small>源码加配置，nanolize 的算法</small></td><td class="num">596,313</td><td class="num">379,914</td><td class="num"><b>63.7%</b></td></tr>
+          <tr><td>源码行数</td><td class="num">71,975</td><td class="num">48,695</td><td class="num">67.7%</td></tr>
+          <tr><td>源文件数</td><td class="num">450</td><td class="num">399</td><td class="num"></td></tr>
+        </tbody>
+      </table></div>
+      <ul class="plain">
+        <li>建议目标是 50%（298,156 token），没有达到。这个目标不强制。</li>
+        <li>第一版导入时就是 63.5%，三轮修复只多了 1,389 个 token。</li>
+        <li>没有做缩小体积的优化轮：检查全部通过之后，控制器按既定计划直接选定并交付。</li>
+        <li>另有 224 个文件原样带过去，不算在改写里：C++/CUDA 源码、构建脚本、YAML 配置、LVIS 类别表。</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>两个缺口</h3>
+      <ul class="plain">
+        <li><b>没有安装证据。</b>这次没有配置安装检查（在全新环境里编 C++ 扩展要一次编译和几个 GB 的下载）。交付因此不能说“装得起来”。</li>
+        <li><b>7 个原版测试函数没能验证。</b>14 条原版检查里共有 98 个测试：44 个原样留作验收，30 个迁移成功，17 个因为在这里跑不了被排除（缺数据集、要联网），剩下 7 个没能验证。这 7 个都不是只用公开接口的测试。</li>
+      </ul>
+      <p class="note">nanolize 的原话：交付有缺口，不作“功能完全保留”的声明。通过检查也不等于证明了语义等价。</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>关于交付的代码，还要知道的</h3>
+    <ul class="plain">
+      <li><b>和原版的重合度是 62%。</b>参与比较的函数行里有 62% 和原版相同，报告里标记的线是 40%。没有哪次保存因此被拒：默认设置下不会因为重合度要求重写。第一版 16 个作者各自的重合度在 58% 到 65% 之间。</li>
+      <li><b>1 个原版测试的回放没过。</b>交付之后，nanolize 把转换时离开验收的原版测试在交付的代码上回放了一遍，只报告、不改变状态。73 个测试里原版通过 68 个，交付的代码通过 67 个。少的那个是检查点功能里的 <code>test_lcp</code>，它和原版的内部结构绑定，不是只用公开接口的测试。</li>
+      <li><b>有些功能的证据比较弱。</b>DensePose 和 TensorMask 的原版测试在这个环境里一个都跑不了，Caffe2/ONNX 导出和 mmdet 包装也导入不了。这些部分靠的是设计出来的测试和场景。主持会话在报告里说明了它没有逐个核对设计者实际能跑到哪些。</li>
+      <li><b>验证包已导出，报告站点在本地生成，没有发布。</b></li>
+    </ul>
+  </div>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>花费</th><th class="num">会话</th><th class="num">美元</th><th class="num">占比</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td class="nowrap"><b>测试设计</b></td><td class="num">80</td><td class="num">272.86</td><td class="num">47%</td><td>53 个设计会话 194.49，27 个评审会话 78.37</td></tr>
+      <tr><td class="nowrap"><b>第一版</b><small>草稿作业</small></td><td class="num">17</td><td class="num">239.63</td><td class="num">42%</td><td>16 个作者会话 237.98，控制器 1.65</td></tr>
+      <tr><td class="nowrap"><b>修复</b></td><td class="num">4</td><td class="num">27.00</td><td class="num">5%</td><td>第 1 轮 16.16，第 2 轮 2.76 + 4.83，第 3 轮 3.25</td></tr>
+      <tr><td class="nowrap"><b>主作业的控制器</b></td><td class="num">4</td><td class="num">8.43</td><td class="num">1%</td><td>三轮；第 1 轮答了两次</td></tr>
+      <tr><td class="nowrap"><b>主持会话</b></td><td class="num">1</td><td class="num">27.07</td><td class="num">5%</td><td>第 01 阶段 18.88，之后七个小时的观察和收尾 8.19</td></tr>
+      <tr><td class="nowrap"><b>合计</b></td><td class="num">106</td><td class="num"><b>575.00</b></td><td class="num"></td><td>两个作业共报告 3.19 亿 token，其中模型写出的约 537 万，其余是读入的上下文</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">花费是各会话自己报告的数字相加，全部会话都有报告。模型都是 claude-fable-5-2，effort high。</p>
+</section>
+
+
+<section id="pair">
+  <h2>成对和并行：第一版是怎么写出来的</h2>
+  <p><code>pair=on</code> 把运行分成两个作业：主作业做冻结（基线、测试设计、封存），草稿作业同时开始写第一版，写完交给主作业去比较和修复。<code>parallel=on</code> 让草稿作业把 80 个叶子分成 16 个互不重叠的范围，按依赖关系排成五层，同一层的范围由不同的作者同时写，各在自己的工作区里，写完再合并。</p>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>层</th><th class="num">范围</th><th class="num">叶子</th><th class="nowrap">起止</th><th class="num">用时</th><th class="num">其中建工作区</th><th class="num">每个作者写了</th><th class="num">美元</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="num">1</td><td class="num">7</td><td class="nowrap">12:40 – 13:11</td><td class="num">30.7 分</td><td class="num">不用建</td><td class="num">30.4 分</td><td class="num">17.99</td></tr>
+      <tr><td>2</td><td class="num">4</td><td class="num">26</td><td class="nowrap">13:11 – 14:08</td><td class="num">56.5 分</td><td class="num">25.1 分</td><td class="num">20.7 – 30.3 分</td><td class="num">57.50</td></tr>
+      <tr><td>3</td><td class="num">4</td><td class="num">21</td><td class="nowrap">14:08 – 15:20</td><td class="num">72.6 分</td><td class="num">25.4 分</td><td class="num">23.1 – 45.9 分</td><td class="num">66.03</td></tr>
+      <tr><td>4</td><td class="num">4</td><td class="num">21</td><td class="nowrap">15:20 – 16:26</td><td class="num">66.0 分</td><td class="num">25.5 分</td><td class="num">17.9 – 38.8 分</td><td class="num">61.27</td></tr>
+      <tr><td>5</td><td class="num">3</td><td class="num">5</td><td class="nowrap">16:26 – 17:13</td><td class="num">47.1 分</td><td class="num">19.3 分</td><td class="num">13.4 – 26.1 分</td><td class="num">35.20</td></tr>
+      <tr><td><b>合计</b></td><td class="num">16</td><td class="num">80</td><td class="nowrap"></td><td class="num">4 小时 33 分</td><td class="num"><b>95 分</b></td><td class="num">会话时间合计 7 小时 10 分</td><td class="num">237.98</td></tr>
+    </tbody>
+  </table></div>
+
+  <ul class="plain">
+    <li><b>第一版：359 个文件，从草稿作业提交算起 4 小时 46 分，240 美元。</b>草稿作业自己的基线和封存用了 9 分钟，控制器规划 2.5 分钟，其余都在写。</li>
+    <li><b>合并没有冲突，没有哪个范围需要重写。</b>每次合并之后，nanolize 会数一遍“代码里导入了、但还不存在的模块”：四次合并之后依次是 22、12、4、4 个，导入主作业时是 5 个。</li>
+    <li><b>成对模式省下的时间大约是 2 个半小时。</b>草稿作业 12:40 就开始写，而主作业的冻结到 15:12 才结束。不开成对模式的话，第一版要等冻结结束才能动笔。这是按同样的写作时间推算的，不是实测。</li>
+    <li><b>建工作区占了第一版三分之一的时间。</b>15 个并行工作区，每个 6 分多钟，而且是一个接一个地建。原因和修法见<a href="#issues">问题 B2</a>。</li>
+    <li><b>并行的代价出现在第一次比较里。</b>并行的作者被告知“别的范围同时在写，不要改共用的包文件”，结果好几个包的 <code>__init__.py</code> 是空的或不全，268 条检查里 141 条没过，其中约 125 条是导入失败。第 1 轮修复让一个作者通读全部代码，对照原版把每个包该导出的名字补齐，用了 47 分钟、16 美元，失败降到 5 条。</li>
+  </ul>
+
+  <div class="panel scroll"><table>
+    <thead><tr><th>修复</th><th>控制器的安排</th><th class="num">作者用时</th><th class="num">美元</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td class="nowrap"><b>第 1 轮</b></td><td>一个作者，面向全部功能：补齐各个包的导出，以及由此引起的几处导入错误</td><td class="num">46.8 分</td><td class="num">16.16</td><td>141 → 5</td></tr>
+      <tr><td class="nowrap"><b>第 2 轮</b></td><td>两个作者并行，各在自己的工作区：一个修数据集，一个修项目配置</td><td class="num">6.6 分、8.0 分</td><td class="num">7.59</td><td>5 → 1</td></tr>
+      <tr><td class="nowrap"><b>第 3 轮</b></td><td>一个作者，只修 ViTDet 的配置</td><td class="num">4.7 分</td><td class="num">3.25</td><td>1 → 0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">没有哪次保存被拒绝，也没有恢复过旧的候选版本。设置允许 2 次体积优化，一次也没有用。</p>
+</section>
+
+
+<section id="pr61">
+  <h2>有没有遇到 PR #61 要解决的问题</h2>
+  <p><b>没有。</b>PR #61 解决的是：无人值守的运行里，主持会话写的清单有错，导致在原版上捕获的基线“不是可用的判据”（例如运行时审计在没改过的原版上就不通过，于是每条检查都记成违规），而主持会话什么都不改，作业带着全盘不通过的检查继续跑完。这次运行里：</p>
+  <div class="panel scroll"><table>
+    <thead><tr><th></th><th>这次看到的</th><th>和 PR #61 的关系</th></tr></thead>
+    <tbody>
+      <tr><td class="nowrap"><b>主作业</b></td><td>两次基线都可用：65 条和 268 条检查在原版上全部通过，带运行时审计的检查审计也都通过。没有出现“基线不可用”的事件</td><td>PR #61 的情况没有发生</td></tr>
+      <tr><td class="nowrap"><b>草稿作业</b></td><td>出现了“基线不可用”的事件，原因是“没有行为约定”：草稿作业不设计测试，31 个叶子在这里没有能通过的原版检查，所以它自己的就绪检查是“受阻”。65 条检查本身在原版上都通过</td><td>不是清单写错了。PR #61 的新规则只在“能指出清单的哪一处错了”时才取消重交，否则作业照常继续，所以即使用了 PR #61，这里的走向也一样</td></tr>
+      <tr><td class="nowrap"><b>主持会话</b></td><td>没有改任何东西，让草稿作业继续，并在问题记录里写了原因：现在的 skill 对这个事件给了两条路，但都要所有者点头，而无人值守时没有所有者</td><td>这正是 PR #61 改的那句话。这次因为不是清单的错，“不改”是对的</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">只选核心功能的那几次 detectron2 运行里，草稿作业也报过同样的事件，原因相同。</p>
+</section>
+
+
+<section id="pages">
+  <h2>页面上是什么样</h2>
+  <p>运行期间有两种页面：运行页（六个阶段的实时进度）和轨迹页（事后回看每一步、每个会话）。这次运行正好碰上了<a href="#b1">问题 B1</a>，所以两种页面在作业后半程都不完整。下面是轨迹页打开时的样子。</p>
+  <figure>
+    <img src="img/trajectory-top.png" alt="轨迹页的顶部：状态是带缺口交付，用时 6 小时 57 分，3 轮控制器，88 个模型会话，花费 308.30 美元；检查通过一格写着 127 / 268" loading="lazy" width="1285" height="925">
+    <figcaption>主作业的轨迹页（公开级别）。状态、用时、轮数、会话数、花费、缺口、交付的候选版本都对。<b>有两格是错的</b>：“检查通过 127 / 268，最后一次完整比较”其实是第一次完整比较的数字，体积写的 63.5% 也是第一版的。原因是后两次完整比较的记录超过了读取上限，页面读不到，就把它读得到的最后一次当成了最后一次。交付的版本实际是 268 / 268、63.7%，下面“结果”一栏里的体积是对的。</figcaption>
+  </figure>
+  <p class="note">运行页在交付之后读不了这个作业（数据接口返回 503），所以这里没有运行页的截图。轨迹页往下还有时间线、功能图、每一步和每个会话的记录；公开级别的轨迹仍然保留作业事件的原话，里面有调度器的设置，所以这里只截了顶部。</p>
+</section>
+
+
+<section id="issues">
+  <h2>问题</h2>
+  <p>分两组。第一组是 nanolize 自己的问题，需要改代码或改 skill 的文字；第二组是这次运行里看到的现象，按现在的设计就是这样，不需要改，列出来是为了读结果时心里有数。两组都不影响这次交付结果的对错。</p>
+
+  <div class="pkg">
+    <h3>一、需要改 nanolize 的</h3>
+    <div class="panel">
+      <div class="item" id="b1">
+        <div class="n">B1</div>
+        <div class="body">
+          <div class="head"><h3>比较记录超过读取上限，运行页和状态工具读不了这个作业</h3><span class="pill crit">要改代码</span></div>
+          <dl>
+            <dt>现象</dt>
+            <dd>交付之后，主持会话按 skill 的要求调用运行页的状态工具，工具报错，原话是 <code>verification.json is a link or exceeds its size bound</code>；运行页的数据接口返回 503。它只能改用另一个工具和作业自己的记录来读结果。按记录的大小推断，从第二次比较的记录写出（18:36）起就已经是这样。轨迹记录也受影响：五次比较只记下三次，缺的两次里有交付所依据的那次完整比较；功能图整个没有读到。</dd>
+            <dt>原因</dt>
+            <dd>记录检查结果的文件有 32 MiB（33.6 MB）的读取上限。这次三份完整比较的记录分别是 28.1、33.9、33.9 MB，后两份超了。占地方的不是测试用例，而是每条检查的“运行时审计”：它把这条检查加载过的模块全部列出来，平均每条约 34 KB，原版一份、候选版本一份，268 条检查加起来占了记录的三分之二。nanolize 本来有一个“记录太大时放弃一部分用例证据”的机制，但它只看用例报告，不看这份模块清单，所以这次什么都没有放弃。</dd>
+            <dt>影响</dt>
+            <dd>作业本身不受影响，照常比较、修复、交付。受影响的是“看”：无人值守时主持会话靠运行页和状态工具判断作业走到哪了，而这次它们在交付时已经不可用；事后的轨迹页少了内容，还把第一次比较的数字显示成最后一次的（见<a href="#pages">截图</a>）。检查越多越容易碰到，全功能运行正好在线上。</dd>
+            <dt>建议</dt>
+            <dd>三处都可以改：模块清单在一份记录里只存一次，检查里只留引用；写记录之前把运行时审计也算进大小；运行页遇到读不了的记录时降级显示，而不是整个接口返回 503。</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="item" id="b2">
+        <div class="n">B2</div>
+        <div class="body">
+          <div class="head"><h3>每建一个并行工作区要 6 分多钟：同一份知识包被编译四遍</h3><span class="pill warn">要改代码</span></div>
+          <dl>
+            <dt>现象</dt>
+            <dd>草稿作业的 15 个并行工作区一个接一个地建，每个约 372 秒，合计 95 分钟，是它 4 小时 46 分的三分之一。主作业第 2 轮修复的两个工作区又用了 13 分钟。主作业因此多等了约一个半小时。</dd>
+            <dt>原因</dt>
+            <dd>建一个工作区会把给作者看的“知识包”从规划文件编译四遍，每遍 88 到 89 秒，而四遍的输入完全相同，15 个工作区的输出逐字节相同。一遍里 97% 的时间花在一个函数上：它拿 2,060 条记录去逐一匹配 224 个原样带走的文件的 818 种写法，共约 169 万次正则匹配，每次都重新拼出模式串，Python 的模式缓存因此用不上。复制文件本身只要 0.3 到 2.9 秒。</dd>
+            <dt>验证</dt>
+            <dd>单独计时：从 31 个文件起步建一个工作区 356.4 秒，从 315 个文件起步 356.2 秒，和文件多少无关。把模式预先编译一次再跑同一个函数，68.1 秒变成 1.16 秒，输出不变。</dd>
+            <dt>建议</dt>
+            <dd>一个作业里按规划文件的摘要只编译一次，其余直接复用；匹配用的模式预先编译。两条都不改变输出。</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="item" id="b3">
+        <div class="n">B3</div>
+        <div class="body">
+          <div class="head"><h3>skill 的说明和工具的实际行为对不上，共 6 处</h3><span class="pill warn">要改文字</span></div>
+          <p>都是主持会话在运行中记下的。每一处它都自己找到了办法，没有影响结果，但都花了额外的轮次。</p>
+          <ul class="plain">
+            <li><b>恢复不了的检查。</b>转换报告说有 3 条被排除的检查“选择条件读不出来”，skill 给的办法只适用于测试文件有未提交改动的情况。实际要做的是把检查的选择从 <code>--deselect</code> 改成 <code>-k</code> 表达式再转换一次，主持会话试了三次才全部恢复。skill 也没说重复转换会怎么处理上一次写出的文件。</li>
+            <li><b>恢复出的测试文件的提交身份。</b>报告说提交“以所有者的身份”，skill 也这么写。但这个仓库没有配置 Git 身份，Git 就用账号名和主机名拼了一个。这个提交因此带着机器上的账号名和主机名。</li>
+            <li><b>现成的测试环境。</b>清单里“依赖里不许出现的包”和运行时审计的目标，skill 说从准备测试环境的工具的返回值里取；但测试环境是现成给定的时候，这一步被跳过，没有工具给出这个值，主持会话只能自己填。</li>
+            <li><b>准备步骤怎么写。</b>skill 里没有准备步骤的格式，主持会话是从另一份文档和代码里读出来的。</li>
+            <li><b>成对模式下草稿作业的就绪检查是“受阻”。</b>提交前的回执里就这么显示（31 个叶子没有检查）。skill 没说这种情况要不要先改再提交。</li>
+            <li><b>提交的返回值写着执行器是“本地”。</b>而检查实际经调度器在计算节点上跑，skill 说主作业的执行器会显示为调度器。看起来这个字段说的是作业进程自己，不是检查的执行器。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pkg">
+    <h3>二、观察到的，不需要改</h3>
+    <div class="panel scroll"><table>
+      <thead><tr><th></th><th>现象</th><th>为什么不算问题</th></tr></thead>
+      <tbody>
+        <tr><td class="id">O1</td><td>草稿作业报“基线不可用”</td><td>草稿作业不设计测试，31 个叶子在它那里没有检查，所以它自己的就绪检查不通过。清单没有错，主作业的基线可用。见 <a href="#pr61">PR #61 一节</a></td></tr>
+        <tr><td class="id">O2</td><td>10 条（后来 11 条）原版检查在“干净导出”里不能重现，不参与敲除验证</td><td>它们要读模型库的配置，而那个链接是准备步骤在工作树里建的，干净导出里没有。这是清单的写法带来的，它们仍然是每个候选版本的验收条件</td></tr>
+        <tr><td class="id">O3</td><td>控制器第 1 轮的第一份答复被拒</td><td>它给作者写的指令有 4,282 个字符，上限是 4,000。nanolize 让它重答一次，第二份 3,280 个字符，通过。多花 44 秒和 2.11 美元</td></tr>
+        <tr><td class="id">O4</td><td>第一版 141 条检查没过，大部分是包的导出不全</td><td>并行的作者按规则不碰共用的包文件，这是避免合并冲突的代价。一轮修复就补齐了。值得考虑的改进：草稿作业交卷时已经数出有 5 个模块缺失，可以先补一轮再交，省掉一次 22 分钟的完整比较</td></tr>
+        <tr><td class="id">O5</td><td>测试设计占了 47% 的花费，冻结里 57% 的时间</td><td>全功能意味着 41 个叶子在这个环境里没有能用的原版测试，都要设计。设计出的文件里有 10 个被拒绝后没有再交还给设计者，作业的事件里写明了；所有叶子最后都有有效测试</td></tr>
+        <tr><td class="id">O6</td><td>检查全过之后直接交付，没有做体积优化</td><td>设置允许 2 次优化，体积目标只是建议值，作业的优先级是“功能优先”。控制器在第 3 轮的计划里就写了“通过就交付”</td></tr>
+        <tr><td class="id">O7</td><td>和原版的重合度 62%，高于报告标记的 40%</td><td>默认设置下重合度只度量、不要求重写。想要更“自己写”的结果，要在设置里打开因重合度重写</td></tr>
+        <tr><td class="id">O8</td><td>交付后回放原版测试，1 个不通过</td><td>回放只报告，不改变状态。那个测试和原版的内部结构绑定，转换时已经离开验收</td></tr>
+        <tr><td class="id">O9</td><td>主作业封存之后空等了 2 小时</td><td>成对模式下主作业要等草稿作业写完。如果没有 B2，草稿作业会早 95 分钟左右写完，这段等待大约只剩 26 分钟</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+
+<section id="record">
+  <h2>记录</h2>
+  <div class="panel scroll"><table>
+    <thead><tr><th></th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td class="nowrap"><b>作业</b></td><td>主作业 <code>945a4f50afb04a8295afba3f1e8c3bee</code>（带缺口交付），草稿作业 <code>e4e7c1644c9a46aa9d8a51d37cfc0d08</code>（写完第一版后结束）</td></tr>
+      <tr><td class="nowrap"><b>结果分支</b></td><td><code>claude/nanolize-945a4f50afb04a8295afba3f1e8c3bee</code>，在这次运行自己克隆的仓库里。没有推送，没有合并</td></tr>
+      <tr><td class="nowrap"><b>项目</b></td><td>detectron2 @ <code>247691a</code>，外加一个提交：主持会话恢复出的 13 个测试文件（44 个测试）。撤销那个提交就回到原样</td></tr>
+      <tr><td class="nowrap"><b>nanolize</b></td><td>main @ <code>074f9946</code>，运行时 0.8.0。这是 PR #60 合入后的提交，合并的经过见<a href="../nanolize-run-page-merge-record/">合并记录</a></td></tr>
+      <tr><td class="nowrap"><b>还留着的</b></td><td>两个作业的全部记录、主持会话的完整对话流和它写的问题记录、轨迹记录（所有者级别和公开级别各一份）、验证包、本地生成的报告站点</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="panel">
+    <h3>这一页的数字从哪来</h3>
+    <ul class="plain">
+      <li><b>步骤、会话、token、花费</b>：轨迹记录。它是运行期间一直跟着作业记下来的，每个会话的花费是会话自己报告的。</li>
+      <li><b>比较的结果、体积、缺口、回放、重合度</b>：主作业的结果记录和事件。轨迹记录里缺的两次比较（见 <a href="#b1">B1</a>）是从作业的事件和步骤记录里读的。</li>
+      <li><b>主持会话的花费和它遇到的问题</b>：它的对话流和它在运行中写的问题记录。</li>
+      <li><b>B2 的计时</b>：事后在记录的副本上单独计时，没有碰运行中的作业。</li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h3>谁做了什么，没有做什么</h3>
+    <ul class="plain">
+      <li><b>主持会话</b>（一个全新的 Claude Code 会话，在计算节点上的批处理作业里）：整个运行，从读项目到交付后的总结。提交之后它没有恢复、取消或放宽任何东西。</li>
+      <li><b>我</b>：把这台机器上的插件更新到 main 的最新提交；准备测试环境的说明并启动运行；运行期间只读地观察；结束后读记录、核对数字、写这一页。</li>
+      <li><b>我的子 agent</b>：查清建工作区为什么慢（B2）。</li>
+      <li><b>没有做的</b>：没有配置安装检查；没有开性能验收；没有推送结果分支；没有发布 nanolize 自己生成的报告站点；没有改 nanolize 的代码，B1、B2 只是查清了原因。</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <p>这一页由 Claude 根据这次运行的记录整理。数字都来自运行自己的记录；推算的地方在正文里写明了是推算。</p>
+</footer>
+
+
+</div>
+</body>
+</html>
