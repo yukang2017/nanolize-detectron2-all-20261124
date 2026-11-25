@@ -175,7 +175,7 @@ figcaption { font-size: 13px; color: var(--ink-2); max-width: 80ch; }
 <section>
   <div class="kpis">
     <div class="kpi"><div class="label">行为检查</div><div class="value">268 <small>/ 268 通过</small></div>
-      <div class="note">65 条来自原版测试，203 条是这次设计出来的。见<a href="#result">结果</a></div></div>
+      <div class="note">65 条是第 01 阶段定下的（其中 33 条直接跑原版测试），203 条是冻结阶段设计出来的。见<a href="#result">结果</a></div></div>
     <div class="kpi"><div class="label">交付体积</div><div class="value">63.7% <small>的原版</small></div>
       <div class="note">379,914 / 596,313 token；48,695 / 71,975 行。50% 的建议目标没有达到，没有做缩小体积的优化轮</div></div>
     <div class="kpi"><div class="label">第一版</div><div class="value">4 小时 46 分</div>
@@ -225,7 +225,7 @@ figcaption { font-size: 13px; color: var(--ink-2); max-width: 80ch; }
     <h3>第 01 阶段给出的范围</h3>
     <ul class="plain">
       <li><b>91 个能力</b>，其中 80 个叶子；71 个对外、20 个内部。<code>scope=all</code>，全部选中，没有退役的功能。</li>
-      <li><b>65 条检查</b>：52 条沿用原版测试，另外 13 个测试文件（44 个测试）是从“只有一部分能在这里跑”的原版测试里恢复出来、由主持会话直接提交到项目里的。65 条在原版上、在检查的沙箱里全部通过。</li>
+      <li><b>65 条检查</b>：33 条直接跑原版的测试文件；19 条是主持会话写的程序输出检查（13 条命令行帮助，6 条配置等程序的输出）；另外 13 个测试文件（44 个测试）是从“只有一部分能在这里跑”的原版测试里恢复出来、由主持会话直接提交到项目里的。65 条在原版上、在检查的沙箱里全部通过。</li>
       <li><b>没法当判据的原版测试</b>：缺数据集文件的、要联网下载权重的、依赖没装的可选包（onnx、caffe2、mmdet、av）的、依赖只在 GPU 上编的扩展的。这些都没有为了让它们通过而改任何东西。</li>
       <li><b>31 个叶子没有任何能在这里通过的原版检查</b>，它们的测试留给冻结阶段去设计；另有 37 个原版测试要迁移成能留下来的形式。</li>
       <li><b>原样带过去的文件 224 个</b>：C++/CUDA 源码、构建和开发脚本、YAML 配置、LVIS 的类别表。</li>
@@ -578,6 +578,7 @@ figcaption { font-size: 13px; color: var(--ink-2); max-width: 80ch; }
 
 <footer>
   <p>这一页由 Claude 根据这次运行的记录整理。数字都来自运行自己的记录；推算的地方在正文里写明了是推算。</p>
+  <p>相关页面：<a href="../nanolize-detectron2-compare-20261125/">这次交付的版本和另一种压缩方法的对比</a>。</p>
 </footer>
 
 
